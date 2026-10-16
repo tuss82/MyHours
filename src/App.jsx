@@ -93,6 +93,128 @@ function totalForPeriod(shifts, period) {
   }, 0)
 }
 
+function startOfDay(date) {
+  const result = new Date(date)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+function paidMinutesInRange(shift, rangeStart, rangeEnd) {
+  const shiftStart = new Date(shift.start).getTime()
+  const shiftEnd = new Date(shift.end).getTime()
+  const overlapStart = Math.max(shiftStart, rangeStart)
+  const overlapEnd = Math.min(shiftEnd, rangeEnd)
+  if (overlapEnd <= overlapStart) return 0
+  const grossMinutes = shiftEnd - shiftStart
+  const breakMinutes = Math.min(Number(shift.breakMinutes || 0), grossMinutes / 60000)
+  return (overlapEnd - overlapStart) / 60000 - breakMinutes * ((overlapEnd - overlapStart) / grossMinutes)
+}
+
+function dayPaidMinutes(shifts, date) {
+  const start = startOfDay(date).getTime()
+  return shifts.reduce((total, shift) => total + paidMinutesInRange(shift, start, start + 86400000), 0)
+}
+
+function daySegments(shifts, date, now) {
+  const start = startOfDay(date).getTime()
+  const end = start + 86400000
+  return shifts
+    .map((shift) => {
+      const shiftStart = new Date(shift.start).getTime()
+      const shiftEnd = Math.min(new Date(shift.end).getTime(), now)
+      const visibleStart = Math.max(start, shiftStart)
+      const visibleEnd = Math.min(end, shiftEnd)
+      if (visibleEnd <= visibleStart) return null
+      return {
+        id: shift.id,
+        left: ((visibleStart - start) / 86400000) * 100,
+        width: ((visibleEnd - visibleStart) / 86400000) * 100,
+        label: `${formatTime(shift.start)} – ${formatTime(shift.end)}`,
+      }
+    })
+    .filter(Boolean)
+}
+
+function monthDays(date) {
+  const first = startOfDay(new Date(date.getFullYear(), date.getMonth(), 1))
+  const count = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  const leading = (first.getDay() + 6) % 7
+  return [...Array(leading).fill(null), ...Array.from({ length: count }, (_, index) => new Date(date.getFullYear(), date.getMonth(), index + 1))]
+}
+
+function CalendarView({ view, shifts, now }) {
+  const today = startOfDay(now)
+  const [weekOffset, setWeekOffset] = useState(0)
+  if (view === 'day') {
+    const segments = daySegments(shifts, today, now.getTime())
+    const paid = dayPaidMinutes(shifts, today)
+    const currentPosition = (Math.min(now.getTime(), today.getTime() + 86400000) - today.getTime()) / 864000
+    return (
+      <div className="calendar-panel">
+        <div className="calendar-panel-heading"><div><p className="eyebrow">Today</p><h3>{formatDate(now)}</h3></div><strong>{formatDuration(paid)}</strong></div>
+        <div className="timeline-labels"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+        <div className="timeline">
+          {segments.map((segment) => <span className="timeline-segment" key={segment.id} style={{ left: `${segment.left}%`, width: `${segment.width}%` }} />)}
+          <span className="current-marker" style={{ left: `${currentPosition}%` }} />
+        </div>
+        <p className="calendar-hint">{segments.length ? 'Your shift and current time are shown on the timeline.' : 'No working time registered today.'}</p>
+      </div>
+    )
+  }
+
+  if (view === 'week') {
+    const monday = new Date(today)
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7) + weekOffset * 7)
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday)
+      date.setDate(monday.getDate() + index)
+      return date
+    })
+    const isCurrentWeek = weekOffset === 0
+    const rangeLabel = `${formatDate(days[0])} – ${formatDate(days[6])}`
+    return (
+      <div className="calendar-panel">
+        <div className="calendar-panel-heading">
+          <div><p className="eyebrow">Monday – Sunday</p><h3>{isCurrentWeek ? 'This week' : rangeLabel}</h3></div>
+          <div className="week-navigation">
+            <button onClick={() => setWeekOffset((offset) => offset - 1)} aria-label="Previous week">←</button>
+            {!isCurrentWeek && <button className="current-week-button" onClick={() => setWeekOffset(0)}>Current week</button>}
+            <button onClick={() => setWeekOffset((offset) => offset + 1)} aria-label="Next week">→</button>
+          </div>
+          <div className="week-total"><span>Total hours</span><strong>{formatDuration(days.reduce((sum, day) => sum + dayPaidMinutes(shifts, day), 0))}</strong></div>
+        </div>
+        <div className="week-list">
+          {days.map((day) => {
+            const segments = daySegments(shifts, day, now.getTime())
+            return <div className={`week-row${isCurrentWeek && day.getTime() === today.getTime() ? ' today' : ''}`} key={day.toISOString()}><span className="week-day">{new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)}<small>{day.getDate()}</small></span><div className="week-shift">{segments.length > 0 && <div className="week-shift-times">{segments.map((segment) => <span key={segment.id}>{segment.label}</span>)}</div>}</div><strong>{dayPaidMinutes(shifts, day) ? `${(dayPaidMinutes(shifts, day) / 60).toFixed(1)}h` : '—'}</strong></div>
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const month = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthLabel = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(month)
+  return (
+    <div className="calendar-panel">
+      <div className="calendar-panel-heading"><div><p className="eyebrow">Paid hours</p><h3>{monthLabel}</h3></div><div className="week-total"><span>Total hours</span><strong>{formatDuration(daysInMonthTotal(shifts, month))}</strong></div></div>
+      <div className="month-weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
+      <div className="month-grid">{monthDays(month).map((day, index) => {
+        if (!day) return <span className="month-day blank" key={`blank-${index}`} />
+        const paid = dayPaidMinutes(shifts, day)
+        const isToday = day.getTime() === today.getTime()
+        return <span className={`month-day${paid ? ' worked' : ''}${isToday ? ' today' : ''}`} key={day.toISOString()}><b>{day.getDate()}</b>{paid ? <small>{(paid / 60).toFixed(1)} hrs</small> : null}</span>
+      })}</div>
+      <p className="calendar-hint"><span className="orange-key" /> Shift registered</p>
+    </div>
+  )
+}
+
+function daysInMonthTotal(shifts, month) {
+  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()
+  return Array.from({ length: count }, (_, index) => dayPaidMinutes(shifts, new Date(month.getFullYear(), month.getMonth(), index + 1))).reduce((sum, value) => sum + value, 0)
+}
+
 function ShiftForm({ shift, onSave, onCancel }) {
   const [form, setForm] = useState(shift ? {
     ...shift,
@@ -155,6 +277,7 @@ export default function App() {
   const [now, setNow] = useState(Date.now())
   const [editing, setEditing] = useState(null)
   const [notice, setNotice] = useState('')
+  const [calendarView, setCalendarView] = useState('day')
 
   useEffect(() => localStorage.setItem(SHIFTS_KEY, JSON.stringify(shifts)), [shifts])
   useEffect(() => {
@@ -179,6 +302,14 @@ export default function App() {
   const activeMinutes = activeStart
     ? Math.max(0, durationMinutes(activeStart, now) - activeBreakMinutes - currentBreakMinutes)
     : 0
+  const displayShifts = useMemo(() => activeStart
+    ? [...shifts, {
+      id: 'active-shift',
+      start: activeStart,
+      end: new Date(now).toISOString(),
+      breakMinutes: activeBreakMinutes + currentBreakMinutes,
+    }]
+    : shifts, [shifts, activeStart, activeBreakMinutes, currentBreakMinutes, now])
   const totals = {
     day: totalForPeriod(shifts, 'day') + activeMinutes,
     week: totalForPeriod(shifts, 'week') + activeMinutes,
@@ -268,10 +399,11 @@ export default function App() {
       <section className="summary-section">
         <div className="section-heading"><div><p className="eyebrow">Your hours</p><h2>At a glance</h2></div><span className="date-label">{formatDate(now)}</span></div>
         <div className="summary-grid">
-          <SummaryCard label="Today" minutes={totals.day} featured />
-          <SummaryCard label="This week" minutes={totals.week} />
-          <SummaryCard label="This month" minutes={totals.month} />
+          <button className={`summary-card${calendarView === 'day' ? ' featured' : ''}`} onClick={() => setCalendarView('day')}><span>Today</span><strong>{formatDuration(totals.day)}</strong></button>
+          <button className={`summary-card${calendarView === 'week' ? ' featured' : ''}`} onClick={() => setCalendarView('week')}><span>This week</span><strong>{formatDuration(totals.week)}</strong></button>
+          <button className={`summary-card${calendarView === 'month' ? ' featured' : ''}`} onClick={() => setCalendarView('month')}><span>This month</span><strong>{formatDuration(totals.month)}</strong></button>
         </div>
+        <CalendarView view={calendarView} shifts={displayShifts} now={new Date(now)} />
       </section>
 
       <section className="history-section">
