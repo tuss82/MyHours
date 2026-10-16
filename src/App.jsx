@@ -269,15 +269,15 @@ function ShiftForm({ shift, onSave, onCancel }) {
 
   return (
     <div className="modal-backdrop">
-      <form className="editor" onSubmit={submit}>
+    <form className="editor" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="shift-editor-title" aria-describedby={error ? 'shift-form-error' : undefined}>
         <div className="editor-heading">
-          <div><p className="eyebrow">Shift details</p><h2>{shift ? 'Edit shift' : 'Add a shift'}</h2></div>
+          <div><p className="eyebrow">Shift details</p><h2 id="shift-editor-title">{shift ? 'Edit shift' : 'Add a shift'}</h2></div>
           <button type="button" className="close-button" onClick={onCancel} aria-label="Close">×</button>
         </div>
-        <label>Start<input type="datetime-local" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} /></label>
-        <label>End<input type="datetime-local" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} /></label>
-        <label>Unpaid break <span className="muted">(minutes)</span><input type="number" min="0" step="1" value={form.breakMinutes} onChange={(event) => setForm({ ...form, breakMinutes: event.target.value })} /></label>
-        {error && <p className="form-error">{error}</p>}
+        <label htmlFor="shift-start">Start<input id="shift-start" aria-label="Shift start date and time" aria-invalid={Boolean(error)} type="datetime-local" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} /></label>
+        <label htmlFor="shift-end">End<input id="shift-end" aria-label="Shift end date and time" aria-invalid={Boolean(error)} type="datetime-local" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} /></label>
+        <label htmlFor="shift-break">Unpaid break <span className="muted">(minutes)</span><input id="shift-break" aria-label="Unpaid break duration in minutes" aria-invalid={Boolean(error)} type="number" min="0" step="1" value={form.breakMinutes} onChange={(event) => setForm({ ...form, breakMinutes: event.target.value })} /></label>
+        {error && <p className="form-error" id="shift-form-error" role="alert">{error}</p>}
         <button className="primary-button" type="submit">Save shift</button>
       </form>
     </div>
@@ -398,20 +398,20 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-mark">M</div>
+        <div className="brand-mark" aria-hidden="true">M</div>
         <div><p className="eyebrow">Personal timesheet</p><h1>MyHours</h1></div>
         <span className="privacy-pill">On this device</span>
       </header>
 
       <section className={`clock-card${activeStart ? ' active' : ''}`}>
-        <div className="status-line"><span className="status-dot" />{activeBreakStart ? 'Currently on unpaid break' : activeStart ? 'Currently working' : 'Ready to clock in'}</div>
+        <div className="status-line" role="status"><span className="status-dot" aria-hidden="true" />{activeBreakStart ? 'Currently on unpaid break' : activeStart ? 'Currently working' : 'Ready to clock in'}</div>
         <div className="time-display">
           <div className="live-clock"><span>Local time</span><strong>{formatClock(now)}</strong></div>
           <div className="elapsed-time"><span>{activeBreakStart ? 'Break time' : 'Work time'}</span><strong>{formatDuration(activeMinutes)}</strong></div>
         </div>
         <p>{activeBreakStart ? `Break started at ${formatTime(activeBreakStart)}` : activeStart ? `Started at ${formatTime(activeStart)}` : 'Keep an independent record of every shift.'}</p>
-        {activeStart && <button className="break-button" onClick={toggleBreak}>{activeBreakStart ? 'End break' : 'Start unpaid break'} <span>{activeBreakStart ? '▶' : 'Ⅱ'}</span></button>}
-        <button className={`clock-button${activeStart ? ' stop' : ''}`} onClick={activeStart ? clockOut : clockIn}>{activeStart ? 'Clock out' : 'Clock in'} <span>→</span></button>
+        {activeStart && <button className="break-button" onClick={toggleBreak} aria-label={activeBreakStart ? 'End unpaid break' : 'Start unpaid break'}>{activeBreakStart ? 'End break' : 'Start unpaid break'} <span aria-hidden="true">{activeBreakStart ? '▶' : 'Ⅱ'}</span></button>}
+        <button className={`clock-button${activeStart ? ' stop' : ''}`} onClick={activeStart ? clockOut : clockIn} aria-label={activeStart ? 'Clock out and save shift' : 'Clock in'}>{activeStart ? 'Clock out' : 'Clock in'} <span aria-hidden="true">→</span></button>
       </section>
 
       {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}
@@ -419,9 +419,9 @@ export default function App() {
       <section className="summary-section">
         <div className="section-heading"><div><p className="eyebrow">Your hours</p><h2>At a glance</h2></div><span className="date-label">{formatDate(now)}</span></div>
         <div className="summary-grid">
-          <button className={`summary-card${calendarView === 'day' ? ' featured' : ''}`} onClick={() => setCalendarView('day')}><span>Today</span><strong>{formatDuration(totals.day)}</strong></button>
-          <button className={`summary-card${calendarView === 'week' ? ' featured' : ''}`} onClick={() => setCalendarView('week')}><span>This week</span><strong>{formatDuration(totals.week)}</strong></button>
-          <button className={`summary-card${calendarView === 'month' ? ' featured' : ''}`} onClick={() => setCalendarView('month')}><span>This month</span><strong>{formatDuration(totals.month)}</strong></button>
+          <button className={`summary-card${calendarView === 'day' ? ' featured' : ''}`} onClick={() => setCalendarView('day')} aria-pressed={calendarView === 'day'}><span>Today</span><strong>{formatDuration(totals.day)}</strong></button>
+          <button className={`summary-card${calendarView === 'week' ? ' featured' : ''}`} onClick={() => setCalendarView('week')} aria-pressed={calendarView === 'week'}><span>This week</span><strong>{formatDuration(totals.week)}</strong></button>
+          <button className={`summary-card${calendarView === 'month' ? ' featured' : ''}`} onClick={() => setCalendarView('month')} aria-pressed={calendarView === 'month'}><span>This month</span><strong>{formatDuration(totals.month)}</strong></button>
         </div>
         <CalendarView view={calendarView} shifts={displayShifts} now={new Date(now)} />
       </section>
@@ -436,7 +436,7 @@ export default function App() {
               <article className="shift-row" key={shift.id}>
                 <div className="shift-date"><strong>{formatDate(shift.start)}</strong><span>{formatTime(shift.start)} – {formatTime(shift.end)}{new Date(shift.start).toDateString() !== new Date(shift.end).toDateString() && ' · next day'}</span></div>
                 <div className="shift-hours"><strong>{formatDuration(shiftMinutes(shift))}</strong><span>{shift.breakMinutes ? formatBreakMinutes(shift.breakMinutes) : 'No break'}</span></div>
-                <div className="shift-actions"><button onClick={() => setEditing(shift)}>Edit</button><button onClick={() => deleteShift(shift.id)}>Delete</button></div>
+                <div className="shift-actions"><button onClick={() => setEditing(shift)} aria-label={`Edit shift on ${formatDate(shift.start)}`}>Edit</button><button onClick={() => deleteShift(shift.id)} aria-label={`Delete shift on ${formatDate(shift.start)}`}>Delete</button></div>
               </article>
             ))}
           </div>
