@@ -4,6 +4,7 @@ const SHIFTS_KEY = 'myhours-shifts'
 const ACTIVE_KEY = 'myhours-active-start'
 const ACTIVE_BREAK_KEY = 'myhours-active-break-start'
 const ACTIVE_BREAK_MINUTES_KEY = 'myhours-active-break-minutes'
+const DISPLAY_LOCALE = 'en-GB'
 
 const pad = (value) => String(value).padStart(2, '0')
 
@@ -22,15 +23,20 @@ function localDateTime(timestamp) {
 }
 
 function formatTime(timestamp) {
-  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
+  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
 }
 
 function formatDate(timestamp) {
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(timestamp))
+  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(timestamp))
 }
 
 function formatClock(timestamp) {
-  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp))
+  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp))
+}
+
+function formatTimelineTime(timestamp) {
+  const date = new Date(timestamp)
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function durationMinutes(start, end) {
@@ -44,6 +50,11 @@ function formatDuration(minutes) {
 
 function shiftMinutes(shift) {
   return Math.max(0, durationMinutes(shift.start, shift.end) - Number(shift.breakMinutes || 0))
+}
+
+function formatBreakMinutes(minutes) {
+  const rounded = Math.max(0, Math.round(Number(minutes) || 0))
+  return `${rounded}m break`
 }
 
 function overlaps(candidate, shifts, ignoredId) {
@@ -125,11 +136,12 @@ function daySegments(shifts, date, now) {
       const visibleStart = Math.max(start, shiftStart)
       const visibleEnd = Math.min(end, shiftEnd)
       if (visibleEnd <= visibleStart) return null
+      const displayEnd = visibleEnd === end ? end - 60000 : visibleEnd
       return {
         id: shift.id,
         left: ((visibleStart - start) / 86400000) * 100,
         width: ((visibleEnd - visibleStart) / 86400000) * 100,
-        label: `${formatTime(shift.start)} – ${formatTime(shift.end)}`,
+        label: `${formatTimelineTime(visibleStart)} – ${formatTimelineTime(displayEnd)}`,
       }
     })
     .filter(Boolean)
@@ -142,6 +154,13 @@ function monthDays(date) {
   return [...Array(leading).fill(null), ...Array.from({ length: count }, (_, index) => new Date(date.getFullYear(), date.getMonth(), index + 1))]
 }
 
+function calendarWeekNumber(date) {
+  const thursday = new Date(date)
+  thursday.setDate(thursday.getDate() + 4 - (thursday.getDay() || 7))
+  const yearStart = new Date(thursday.getFullYear(), 0, 1)
+  return Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7)
+}
+
 function CalendarView({ view, shifts, now }) {
   const today = startOfDay(now)
   const [weekOffset, setWeekOffset] = useState(0)
@@ -152,7 +171,7 @@ function CalendarView({ view, shifts, now }) {
     return (
       <div className="calendar-panel">
         <div className="calendar-panel-heading"><div><p className="eyebrow">Today</p><h3>{formatDate(now)}</h3></div><strong>{formatDuration(paid)}</strong></div>
-        <div className="timeline-labels"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+        <div className="timeline-labels"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
         <div className="timeline">
           {segments.map((segment) => <span className="timeline-segment" key={segment.id} style={{ left: `${segment.left}%`, width: `${segment.width}%` }} />)}
           <span className="current-marker" style={{ left: `${currentPosition}%` }} />
@@ -175,18 +194,18 @@ function CalendarView({ view, shifts, now }) {
     return (
       <div className="calendar-panel">
         <div className="calendar-panel-heading">
-          <div><p className="eyebrow">Monday – Sunday</p><h3>{isCurrentWeek ? 'This week' : rangeLabel}</h3></div>
+          <div><p className="eyebrow">Calendar week {calendarWeekNumber(monday)}</p><h3>{isCurrentWeek ? 'This week' : rangeLabel}</h3></div>
           <div className="week-navigation">
             <button onClick={() => setWeekOffset((offset) => offset - 1)} aria-label="Previous week">←</button>
             {!isCurrentWeek && <button className="current-week-button" onClick={() => setWeekOffset(0)}>Current week</button>}
             <button onClick={() => setWeekOffset((offset) => offset + 1)} aria-label="Next week">→</button>
           </div>
-          <div className="week-total"><span>Total hours</span><strong>{formatDuration(days.reduce((sum, day) => sum + dayPaidMinutes(shifts, day), 0))}</strong></div>
+          <div className="week-total"><span>Total paid hours</span><strong>{formatDuration(days.reduce((sum, day) => sum + dayPaidMinutes(shifts, day), 0))}</strong></div>
         </div>
         <div className="week-list">
           {days.map((day) => {
             const segments = daySegments(shifts, day, now.getTime())
-            return <div className={`week-row${isCurrentWeek && day.getTime() === today.getTime() ? ' today' : ''}`} key={day.toISOString()}><span className="week-day">{new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)}<small>{day.getDate()}</small></span><div className="week-shift">{segments.length > 0 && <div className="week-shift-times">{segments.map((segment) => <span key={segment.id}>{segment.label}</span>)}</div>}</div><strong>{dayPaidMinutes(shifts, day) ? `${(dayPaidMinutes(shifts, day) / 60).toFixed(1)}h` : '—'}</strong></div>
+            return <div className={`week-row${isCurrentWeek && day.getTime() === today.getTime() ? ' today' : ''}`} key={day.toISOString()}><span className="week-day">{new Intl.DateTimeFormat(DISPLAY_LOCALE, { weekday: 'short' }).format(day)}<small>{day.getDate()}</small></span><div className="week-shift">{segments.length > 0 && <div className="week-shift-times">{segments.map((segment) => <span key={segment.id}>{segment.label}</span>)}</div>}</div><strong>{dayPaidMinutes(shifts, day) ? `${(dayPaidMinutes(shifts, day) / 60).toFixed(1)}h` : '—'}</strong></div>
           })}
         </div>
       </div>
@@ -194,10 +213,10 @@ function CalendarView({ view, shifts, now }) {
   }
 
   const month = new Date(now.getFullYear(), now.getMonth(), 1)
-  const monthLabel = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(month)
+  const monthLabel = new Intl.DateTimeFormat(DISPLAY_LOCALE, { month: 'long', year: 'numeric' }).format(month)
   return (
     <div className="calendar-panel">
-      <div className="calendar-panel-heading"><div><p className="eyebrow">Paid hours</p><h3>{monthLabel}</h3></div><div className="week-total"><span>Total hours</span><strong>{formatDuration(daysInMonthTotal(shifts, month))}</strong></div></div>
+      <div className="calendar-panel-heading"><div><h3>{monthLabel}</h3></div><div className="week-total"><span>Total paid hours</span><strong>{formatDuration(daysInMonthTotal(shifts, month))}</strong></div></div>
       <div className="month-weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
       <div className="month-grid">{monthDays(month).map((day, index) => {
         if (!day) return <span className="month-day blank" key={`blank-${index}`} />
@@ -244,7 +263,7 @@ function ShiftForm({ shift, onSave, onCancel }) {
       ...form,
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
-      breakMinutes,
+      breakMinutes: Math.min(Math.round(breakMinutes), Math.round((end - start) / 60000)),
     })
   }
 
@@ -298,6 +317,7 @@ export default function App() {
   }, [])
 
   const orderedShifts = useMemo(() => [...shifts].sort((a, b) => new Date(b.start) - new Date(a.start)), [shifts])
+  const recentShifts = orderedShifts.slice(0, 5)
   const currentBreakMinutes = activeBreakStart ? durationMinutes(activeBreakStart, now) : 0
   const activeMinutes = activeStart
     ? Math.max(0, durationMinutes(activeStart, now) - activeBreakMinutes - currentBreakMinutes)
@@ -350,7 +370,7 @@ export default function App() {
       id: crypto.randomUUID(),
       start: activeStart,
       end: end.toISOString(),
-      breakMinutes: totalBreakMinutes,
+      breakMinutes: Math.round(totalBreakMinutes),
     }, ...current])
     setActiveStart(null)
     setActiveBreakStart(null)
@@ -412,10 +432,10 @@ export default function App() {
           <div className="empty-state"><div className="empty-icon">◷</div><h3>No shifts yet</h3><p>Clock in when your next workday starts, or add a previous shift.</p></div>
         ) : (
           <div className="shift-list">
-            {orderedShifts.map((shift) => (
+            {recentShifts.map((shift) => (
               <article className="shift-row" key={shift.id}>
                 <div className="shift-date"><strong>{formatDate(shift.start)}</strong><span>{formatTime(shift.start)} – {formatTime(shift.end)}{new Date(shift.start).toDateString() !== new Date(shift.end).toDateString() && ' · next day'}</span></div>
-                <div className="shift-hours"><strong>{formatDuration(shiftMinutes(shift))}</strong><span>{shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break'}</span></div>
+                <div className="shift-hours"><strong>{formatDuration(shiftMinutes(shift))}</strong><span>{shift.breakMinutes ? formatBreakMinutes(shift.breakMinutes) : 'No break'}</span></div>
                 <div className="shift-actions"><button onClick={() => setEditing(shift)}>Edit</button><button onClick={() => deleteShift(shift.id)}>Delete</button></div>
               </article>
             ))}
