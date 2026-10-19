@@ -4,6 +4,7 @@ const SHIFTS_KEY = 'myhours-shifts'
 const ACTIVE_KEY = 'myhours-active-start'
 const ACTIVE_BREAK_KEY = 'myhours-active-break-start'
 const ACTIVE_BREAK_MINUTES_KEY = 'myhours-active-break-minutes'
+const NOTES_KEY = 'myhours-day-notes'
 const DISPLAY_LOCALE = 'en-GB'
 
 const pad = (value) => String(value).padStart(2, '0')
@@ -15,6 +16,20 @@ function readShifts() {
   } catch {
     return []
   }
+}
+
+function readNotes() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(NOTES_KEY) || '{}')
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
+  } catch {
+    return {}
+  }
+}
+
+function dateKey(date) {
+  const value = new Date(date)
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
 }
 
 function localDateTime(timestamp) {
@@ -161,7 +176,7 @@ function calendarWeekNumber(date) {
   return Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7)
 }
 
-function CalendarView({ view, shifts, now }) {
+function CalendarView({ view, shifts, notes, now, onEditNote }) {
   const today = startOfDay(now)
   const [weekOffset, setWeekOffset] = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -206,7 +221,8 @@ function CalendarView({ view, shifts, now }) {
         <div className="week-list">
           {days.map((day) => {
             const segments = daySegments(shifts, day, now.getTime())
-            return <div className={`week-row${isCurrentWeek && day.getTime() === today.getTime() ? ' today' : ''}`} key={day.toISOString()}><span className="week-day">{new Intl.DateTimeFormat(DISPLAY_LOCALE, { weekday: 'short' }).format(day)}<small>{day.getDate()}</small></span><div className="week-shift">{segments.length > 0 && <div className="week-shift-times">{segments.map((segment) => <span key={segment.id}>{segment.label}</span>)}</div>}</div><strong>{dayPaidMinutes(shifts, day) ? `${(dayPaidMinutes(shifts, day) / 60).toFixed(1)}h` : '—'}</strong></div>
+            const note = notes[dateKey(day)]
+            return <div className={`week-row${isCurrentWeek && day.getTime() === today.getTime() ? ' today' : ''}`} key={day.toISOString()} role="button" tabIndex="0" onClick={() => onEditNote(day)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onEditNote(day) } }} aria-label={`${formatDate(day)}${note ? ', note saved' : ', add note'}`}><span className="week-day"><span className="calendar-day-number">{new Intl.DateTimeFormat(DISPLAY_LOCALE, { weekday: 'short' }).format(day)}<small>{day.getDate()}</small></span>{note && <span className="note-indicator" aria-label="Note saved">▤</span>}</span><div className="week-shift">{segments.length > 0 && <div className="week-shift-times">{segments.map((segment) => <span key={segment.id}>{segment.label}</span>)}</div>}</div><strong>{dayPaidMinutes(shifts, day) ? `${(dayPaidMinutes(shifts, day) / 60).toFixed(1)}h` : '—'}</strong></div>
           })}
         </div>
       </div>
@@ -227,14 +243,16 @@ function CalendarView({ view, shifts, now }) {
         </div>
         <div className="week-total"><span>Total paid hours</span><strong>{formatDuration(daysInMonthTotal(shifts, month))}</strong></div>
       </div>
+      <p className="calendar-instruction">Click day to add note</p>
       <div className="month-weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
       <div className="month-grid">{monthDays(month).map((day, index) => {
         if (!day) return <span className="month-day blank" key={`blank-${index}`} />
         const paid = dayPaidMinutes(shifts, day)
         const isToday = isCurrentMonth && day.getTime() === today.getTime()
-        return <span className={`month-day${paid ? ' worked' : ''}${isToday ? ' today' : ''}`} key={day.toISOString()}><b>{day.getDate()}</b>{paid ? <small>{(paid / 60).toFixed(1)} hrs</small> : null}</span>
+        const note = notes[dateKey(day)]
+        return <button type="button" className={`month-day${paid ? ' worked' : ''}${isToday ? ' today' : ''}`} key={day.toISOString()} onClick={() => onEditNote(day)} aria-label={`${formatDate(day)}${note ? ', note saved' : ', add note'}`}><b>{day.getDate()}</b>{paid ? <small>{(paid / 60).toFixed(1)} hrs</small> : null}{note && <span className="note-indicator" aria-label="Note saved">▤</span>}</button>
       })}</div>
-      <p className="calendar-hint"><span className="orange-key" /> Shift registered</p>
+      <p className="calendar-hint"><span className="orange-key" /> Shift registered <span className="note-key">▤</span> Note saved</p>
     </div>
   )
 }
@@ -294,6 +312,30 @@ function ShiftForm({ shift, onSave, onCancel }) {
   )
 }
 
+function NoteEditor({ date, note, onSave, onDelete, onCancel }) {
+  const [value, setValue] = useState(note || '')
+  const label = formatDate(date)
+
+  function submit(event) {
+    event.preventDefault()
+    onSave(dateKey(date), value.trim())
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <form className="editor" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="note-editor-title">
+        <div className="editor-heading">
+          <div><p className="eyebrow">Daily note</p><h2 id="note-editor-title">{label}</h2></div>
+          <button type="button" className="close-button" onClick={onCancel} aria-label="Close">×</button>
+        </div>
+        <label htmlFor="day-note">Note<textarea id="day-note" rows="5" maxLength="500" value={value} onChange={(event) => setValue(event.target.value)} /></label>
+        <button className="primary-button" type="submit">Save note</button>
+        {note && <button className="secondary-button" type="button" onClick={() => onDelete(dateKey(date))}>Delete note</button>}
+      </form>
+    </div>
+  )
+}
+
 function SummaryCard({ label, minutes, featured }) {
   return <div className={`summary-card${featured ? ' featured' : ''}`}><span>{label}</span><strong>{formatDuration(minutes)}</strong></div>
 }
@@ -303,12 +345,15 @@ export default function App() {
   const [activeStart, setActiveStart] = useState(() => localStorage.getItem(ACTIVE_KEY))
   const [activeBreakStart, setActiveBreakStart] = useState(() => localStorage.getItem(ACTIVE_BREAK_KEY))
   const [activeBreakMinutes, setActiveBreakMinutes] = useState(() => Number(localStorage.getItem(ACTIVE_BREAK_MINUTES_KEY) || 0))
+  const [notes, setNotes] = useState(readNotes)
   const [now, setNow] = useState(Date.now())
   const [editing, setEditing] = useState(null)
+  const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [notice, setNotice] = useState('')
   const [calendarView, setCalendarView] = useState('day')
 
   useEffect(() => localStorage.setItem(SHIFTS_KEY, JSON.stringify(shifts)), [shifts])
+  useEffect(() => localStorage.setItem(NOTES_KEY, JSON.stringify(notes)), [notes])
   useEffect(() => {
     if (activeStart) localStorage.setItem(ACTIVE_KEY, activeStart)
     else localStorage.removeItem(ACTIVE_KEY)
@@ -325,6 +370,11 @@ export default function App() {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
+  useEffect(() => {
+    if (!['Note saved.', 'Note removed.'].includes(notice)) return undefined
+    const timer = setTimeout(() => setNotice(''), 3000)
+    return () => clearTimeout(timer)
+  }, [notice])
 
   const orderedShifts = useMemo(() => [...shifts].sort((a, b) => new Date(b.start) - new Date(a.start)), [shifts])
   const recentShifts = orderedShifts.slice(0, 5)
@@ -405,6 +455,27 @@ export default function App() {
     if (window.confirm('Delete this shift?')) setShifts((current) => current.filter((shift) => shift.id !== id))
   }
 
+  function saveNote(key, value) {
+    setNotes((current) => {
+      const next = { ...current }
+      if (value) next[key] = value
+      else delete next[key]
+      return next
+    })
+    setEditingNoteDate(null)
+    setNotice(value ? 'Note saved.' : 'Note removed.')
+  }
+
+  function deleteNote(key) {
+    setNotes((current) => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+    setEditingNoteDate(null)
+    setNotice('Note removed.')
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -433,7 +504,7 @@ export default function App() {
           <button className={`summary-card${calendarView === 'week' ? ' featured' : ''}`} onClick={() => setCalendarView('week')} aria-pressed={calendarView === 'week'}><span>This week</span><strong>{formatDuration(totals.week)}</strong></button>
           <button className={`summary-card${calendarView === 'month' ? ' featured' : ''}`} onClick={() => setCalendarView('month')} aria-pressed={calendarView === 'month'}><span>This month</span><strong>{formatDuration(totals.month)}</strong></button>
         </div>
-        <CalendarView view={calendarView} shifts={displayShifts} now={new Date(now)} />
+        <CalendarView view={calendarView} shifts={displayShifts} notes={notes} now={new Date(now)} onEditNote={setEditingNoteDate} />
       </section>
 
       <section className="history-section">
@@ -453,6 +524,7 @@ export default function App() {
         )}
       </section>
       {editing && <ShiftForm shift={editing.id ? editing : null} onSave={saveShift} onCancel={() => setEditing(null)} />}
+      {editingNoteDate && <NoteEditor date={editingNoteDate} note={notes[dateKey(editingNoteDate)]} onSave={saveNote} onDelete={deleteNote} onCancel={() => setEditingNoteDate(null)} />}
     </main>
   )
 }
