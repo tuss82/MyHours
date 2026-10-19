@@ -1,180 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react'
-
-const SHIFTS_KEY = 'myhours-shifts'
-const ACTIVE_KEY = 'myhours-active-start'
-const ACTIVE_BREAK_KEY = 'myhours-active-break-start'
-const ACTIVE_BREAK_MINUTES_KEY = 'myhours-active-break-minutes'
-const NOTES_KEY = 'myhours-day-notes'
-const DISPLAY_LOCALE = 'en-GB'
-
-const pad = (value) => String(value).padStart(2, '0')
-
-function readShifts() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SHIFTS_KEY) || '[]')
-    return Array.isArray(stored) ? stored : []
-  } catch {
-    return []
-  }
-}
-
-function readNotes() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(NOTES_KEY) || '{}')
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}
-  } catch {
-    return {}
-  }
-}
-
-function dateKey(date) {
-  const value = new Date(date)
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
-}
-
-function localDateTime(timestamp) {
-  const date = new Date(timestamp)
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-function formatTime(timestamp) {
-  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { hour: 'numeric', minute: '2-digit' }).format(new Date(timestamp))
-}
-
-function formatDate(timestamp) {
-  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(timestamp))
-}
-
-function formatClock(timestamp) {
-  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(timestamp))
-}
-
-function formatTimelineTime(timestamp) {
-  const date = new Date(timestamp)
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-function durationMinutes(start, end) {
-  return Math.max(0, (new Date(end).getTime() - new Date(start).getTime()) / 60000)
-}
-
-function formatDuration(minutes) {
-  const rounded = Math.max(0, Math.round(minutes))
-  return `${Math.floor(rounded / 60)}h ${pad(rounded % 60)}m`
-}
-
-function shiftMinutes(shift) {
-  return Math.max(0, durationMinutes(shift.start, shift.end) - Number(shift.breakMinutes || 0))
-}
-
-function formatBreakMinutes(minutes) {
-  const rounded = Math.max(0, Math.round(Number(minutes) || 0))
-  return `${rounded}m break`
-}
-
-function overlaps(candidate, shifts, ignoredId) {
-  const start = new Date(candidate.start).getTime()
-  const end = new Date(candidate.end).getTime()
-  return shifts.some((shift) => {
-    if (shift.id === ignoredId) return false
-    return start < new Date(shift.end).getTime() && end > new Date(shift.start).getTime()
-  })
-}
-
-function intervalsOverlap(firstStart, firstEnd, secondStart, secondEnd) {
-  return new Date(firstStart).getTime() < new Date(secondEnd).getTime()
-    && new Date(firstEnd).getTime() > new Date(secondStart).getTime()
-}
-
-function periodBounds(period) {
-  const start = new Date()
-  const end = new Date()
-  if (period === 'day') {
-    start.setHours(0, 0, 0, 0)
-    end.setHours(24, 0, 0, 0)
-  } else if (period === 'week') {
-    const mondayOffset = (start.getDay() + 6) % 7
-    start.setDate(start.getDate() - mondayOffset)
-    start.setHours(0, 0, 0, 0)
-    end.setTime(start.getTime())
-    end.setDate(start.getDate() + 7)
-  } else {
-    start.setDate(1)
-    start.setHours(0, 0, 0, 0)
-    end.setMonth(start.getMonth() + 1, 1)
-    end.setHours(0, 0, 0, 0)
-  }
-  return [start.getTime(), end.getTime()]
-}
-
-function totalForPeriod(shifts, period) {
-  const [periodStart, periodEnd] = periodBounds(period)
-  return shifts.reduce((total, shift) => {
-    const start = Math.max(new Date(shift.start).getTime(), periodStart)
-    const end = Math.min(new Date(shift.end).getTime(), periodEnd)
-    if (end <= start) return total
-    const gross = new Date(shift.end).getTime() - new Date(shift.start).getTime()
-    const breakMinutes = Math.min(Number(shift.breakMinutes || 0), gross / 60000)
-    return total + (end - start) / 60000 - breakMinutes * ((end - start) / gross)
-  }, 0)
-}
-
-function startOfDay(date) {
-  const result = new Date(date)
-  result.setHours(0, 0, 0, 0)
-  return result
-}
-
-function paidMinutesInRange(shift, rangeStart, rangeEnd) {
-  const shiftStart = new Date(shift.start).getTime()
-  const shiftEnd = new Date(shift.end).getTime()
-  const overlapStart = Math.max(shiftStart, rangeStart)
-  const overlapEnd = Math.min(shiftEnd, rangeEnd)
-  if (overlapEnd <= overlapStart) return 0
-  const grossMinutes = shiftEnd - shiftStart
-  const breakMinutes = Math.min(Number(shift.breakMinutes || 0), grossMinutes / 60000)
-  return (overlapEnd - overlapStart) / 60000 - breakMinutes * ((overlapEnd - overlapStart) / grossMinutes)
-}
-
-function dayPaidMinutes(shifts, date) {
-  const start = startOfDay(date).getTime()
-  return shifts.reduce((total, shift) => total + paidMinutesInRange(shift, start, start + 86400000), 0)
-}
-
-function daySegments(shifts, date, now) {
-  const start = startOfDay(date).getTime()
-  const end = start + 86400000
-  return shifts
-    .map((shift) => {
-      const shiftStart = new Date(shift.start).getTime()
-      const shiftEnd = Math.min(new Date(shift.end).getTime(), now)
-      const visibleStart = Math.max(start, shiftStart)
-      const visibleEnd = Math.min(end, shiftEnd)
-      if (visibleEnd <= visibleStart) return null
-      const displayEnd = visibleEnd === end ? end - 60000 : visibleEnd
-      return {
-        id: shift.id,
-        left: ((visibleStart - start) / 86400000) * 100,
-        width: ((visibleEnd - visibleStart) / 86400000) * 100,
-        label: `${formatTimelineTime(visibleStart)} – ${formatTimelineTime(displayEnd)}`,
-      }
-    })
-    .filter(Boolean)
-}
-
-function monthDays(date) {
-  const first = startOfDay(new Date(date.getFullYear(), date.getMonth(), 1))
-  const count = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
-  const leading = (first.getDay() + 6) % 7
-  return [...Array(leading).fill(null), ...Array.from({ length: count }, (_, index) => new Date(date.getFullYear(), date.getMonth(), index + 1))]
-}
-
-function calendarWeekNumber(date) {
-  const thursday = new Date(date)
-  thursday.setDate(thursday.getDate() + 4 - (thursday.getDay() || 7))
-  const yearStart = new Date(thursday.getFullYear(), 0, 1)
-  return Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7)
-}
+import { readNotes, readShifts, STORAGE_KEYS, writeJson } from './utils/storage'
+import {
+  calendarWeekNumber,
+  dateKey,
+  dayPaidMinutes,
+  daySegments,
+  DISPLAY_LOCALE,
+  durationMinutes,
+  formatBreakMinutes,
+  formatClock,
+  formatDate,
+  formatDuration,
+  formatTime,
+  intervalsOverlap,
+  localDateTime,
+  monthDays,
+  shiftMinutes,
+  shiftOverlapsExisting,
+  startOfDay,
+  totalForPeriod,
+} from './utils/time'
 
 function CalendarView({ view, shifts, notes, now, onEditNote }) {
   const today = startOfDay(now)
@@ -247,10 +92,10 @@ function CalendarView({ view, shifts, notes, now, onEditNote }) {
       <div className="month-weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
       <div className="month-grid">{monthDays(month).map((day, index) => {
         if (!day) return <span className="month-day blank" key={`blank-${index}`} />
-        const paid = dayPaidMinutes(shifts, day)
+        const paidMinutes = dayPaidMinutes(shifts, day)
         const isToday = isCurrentMonth && day.getTime() === today.getTime()
         const note = notes[dateKey(day)]
-        return <button type="button" className={`month-day${paid ? ' worked' : ''}${isToday ? ' today' : ''}`} key={day.toISOString()} onClick={() => onEditNote(day)} aria-label={`${formatDate(day)}${note ? ', note saved' : ', add note'}`}><b>{day.getDate()}</b>{paid ? <small>{(paid / 60).toFixed(1)} hrs</small> : null}{note && <span className="note-indicator" aria-label="Note saved">▤</span>}</button>
+        return <button type="button" className={`month-day${paidMinutes ? ' worked' : ''}${isToday ? ' today' : ''}`} key={day.toISOString()} onClick={() => onEditNote(day)} aria-label={`${formatDate(day)}${note ? ', note saved' : ', add note'}`}><b>{day.getDate()}</b>{paidMinutes ? <small>{(paidMinutes / 60).toFixed(1)} hrs</small> : null}{note && <span className="note-indicator" aria-label="Note saved">▤</span>}</button>
       })}</div>
       <p className="calendar-hint"><span className="orange-key" /> Shift registered <span className="note-key">▤</span> Note saved</p>
     </div>
@@ -267,6 +112,7 @@ function ShiftForm({ shift, onSave, onCancel }) {
     ...shift,
     start: localDateTime(shift.start),
     end: localDateTime(shift.end),
+    breakMinutes: Math.round(Number(shift.breakMinutes) || 0),
   } : {
     start: localDateTime(Date.now() - 8 * 3600000),
     end: localDateTime(Date.now()),
@@ -287,17 +133,18 @@ function ShiftForm({ shift, onSave, onCancel }) {
       setError('Break must be between 0 and the shift length.')
       return
     }
-    onSave({
+    const saved = onSave({
       ...form,
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       breakMinutes: Math.min(Math.round(breakMinutes), Math.round((end - start) / 60000)),
     })
+    if (saved === false) setError('This shift overlaps another saved or active shift.')
   }
 
   return (
     <div className="modal-backdrop">
-    <form className="editor" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="shift-editor-title" aria-describedby={error ? 'shift-form-error' : undefined}>
+      <form className="editor" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="shift-editor-title" aria-describedby={error ? 'shift-form-error' : undefined}>
         <div className="editor-heading">
           <div><p className="eyebrow">Shift details</p><h2 id="shift-editor-title">{shift ? 'Edit shift' : 'Add a shift'}</h2></div>
           <button type="button" className="close-button" onClick={onCancel} aria-label="Close">×</button>
@@ -342,29 +189,29 @@ function SummaryCard({ label, minutes, featured }) {
 
 export default function App() {
   const [shifts, setShifts] = useState(readShifts)
-  const [activeStart, setActiveStart] = useState(() => localStorage.getItem(ACTIVE_KEY))
-  const [activeBreakStart, setActiveBreakStart] = useState(() => localStorage.getItem(ACTIVE_BREAK_KEY))
-  const [activeBreakMinutes, setActiveBreakMinutes] = useState(() => Number(localStorage.getItem(ACTIVE_BREAK_MINUTES_KEY) || 0))
+  const [activeStart, setActiveStart] = useState(() => localStorage.getItem(STORAGE_KEYS.activeStart))
+  const [activeBreakStart, setActiveBreakStart] = useState(() => localStorage.getItem(STORAGE_KEYS.activeBreakStart))
+  const [activeBreakMinutes, setActiveBreakMinutes] = useState(() => Number(localStorage.getItem(STORAGE_KEYS.activeBreakMinutes) || 0))
   const [notes, setNotes] = useState(readNotes)
   const [now, setNow] = useState(Date.now())
-  const [editing, setEditing] = useState(null)
+  const [editingShift, setEditingShift] = useState(null)
   const [editingNoteDate, setEditingNoteDate] = useState(null)
   const [notice, setNotice] = useState('')
   const [calendarView, setCalendarView] = useState('day')
 
-  useEffect(() => localStorage.setItem(SHIFTS_KEY, JSON.stringify(shifts)), [shifts])
-  useEffect(() => localStorage.setItem(NOTES_KEY, JSON.stringify(notes)), [notes])
+  useEffect(() => writeJson(STORAGE_KEYS.shifts, shifts), [shifts])
+  useEffect(() => writeJson(STORAGE_KEYS.notes, notes), [notes])
   useEffect(() => {
-    if (activeStart) localStorage.setItem(ACTIVE_KEY, activeStart)
-    else localStorage.removeItem(ACTIVE_KEY)
+    if (activeStart) localStorage.setItem(STORAGE_KEYS.activeStart, activeStart)
+    else localStorage.removeItem(STORAGE_KEYS.activeStart)
   }, [activeStart])
   useEffect(() => {
-    if (activeBreakStart) localStorage.setItem(ACTIVE_BREAK_KEY, activeBreakStart)
-    else localStorage.removeItem(ACTIVE_BREAK_KEY)
+    if (activeBreakStart) localStorage.setItem(STORAGE_KEYS.activeBreakStart, activeBreakStart)
+    else localStorage.removeItem(STORAGE_KEYS.activeBreakStart)
   }, [activeBreakStart])
   useEffect(() => {
-    if (activeStart) localStorage.setItem(ACTIVE_BREAK_MINUTES_KEY, String(activeBreakMinutes))
-    else localStorage.removeItem(ACTIVE_BREAK_MINUTES_KEY)
+    if (activeStart) localStorage.setItem(STORAGE_KEYS.activeBreakMinutes, String(activeBreakMinutes))
+    else localStorage.removeItem(STORAGE_KEYS.activeBreakMinutes)
   }, [activeStart, activeBreakMinutes])
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -439,16 +286,17 @@ export default function App() {
   }
 
   function saveShift(shift) {
-    const overlapsActive = activeStart && intervalsOverlap(shift.start, shift.end, activeStart, new Date().toISOString())
-    if (overlaps(shift, shifts, shift.id) || overlapsActive) {
-      setNotice('That shift overlaps another saved shift.')
-      return
+    const activeShiftOverlaps = activeStart && intervalsOverlap(shift.start, shift.end, activeStart, new Date().toISOString())
+    if (shiftOverlapsExisting(shift, shifts, shift.id) || activeShiftOverlaps) {
+      setNotice('That shift overlaps another saved or active shift.')
+      return false
     }
     setShifts((current) => shift.id
       ? current.map((item) => item.id === shift.id ? shift : item)
       : [{ ...shift, id: crypto.randomUUID() }, ...current])
-    setEditing(null)
+    setEditingShift(null)
     setNotice('Shift saved.')
+    return true
   }
 
   function deleteShift(id) {
@@ -508,7 +356,7 @@ export default function App() {
       </section>
 
       <section className="history-section">
-        <div className="section-heading"><div><p className="eyebrow">History</p><h2>Recent shifts</h2></div><button className="add-button" onClick={() => setEditing({})}>+ Add shift</button></div>
+        <div className="section-heading"><div><p className="eyebrow">History</p><h2>Recent shifts</h2></div><button className="add-button" onClick={() => setEditingShift({})}>+ Add shift</button></div>
         {orderedShifts.length === 0 ? (
           <div className="empty-state"><div className="empty-icon">◷</div><h3>No shifts yet</h3><p>Clock in when your next workday starts, or add a previous shift.</p></div>
         ) : (
@@ -517,13 +365,13 @@ export default function App() {
               <article className="shift-row" key={shift.id}>
                 <div className="shift-date"><strong>{formatDate(shift.start)}</strong><span>{formatTime(shift.start)} – {formatTime(shift.end)}{new Date(shift.start).toDateString() !== new Date(shift.end).toDateString() && ' · next day'}</span></div>
                 <div className="shift-hours"><strong>{formatDuration(shiftMinutes(shift))}</strong><span>{shift.breakMinutes ? formatBreakMinutes(shift.breakMinutes) : 'No break'}</span></div>
-                <div className="shift-actions"><button onClick={() => setEditing(shift)} aria-label={`Edit shift on ${formatDate(shift.start)}`}>Edit</button><button onClick={() => deleteShift(shift.id)} aria-label={`Delete shift on ${formatDate(shift.start)}`}>Delete</button></div>
+                <div className="shift-actions"><button onClick={() => setEditingShift(shift)} aria-label={`Edit shift on ${formatDate(shift.start)}`}>Edit</button><button onClick={() => deleteShift(shift.id)} aria-label={`Delete shift on ${formatDate(shift.start)}`}>Delete</button></div>
               </article>
             ))}
           </div>
         )}
       </section>
-      {editing && <ShiftForm shift={editing.id ? editing : null} onSave={saveShift} onCancel={() => setEditing(null)} />}
+      {editingShift && <ShiftForm shift={editingShift.id ? editingShift : null} onSave={saveShift} onCancel={() => setEditingShift(null)} />}
       {editingNoteDate && <NoteEditor date={editingNoteDate} note={notes[dateKey(editingNoteDate)]} onSave={saveNote} onDelete={deleteNote} onCancel={() => setEditingNoteDate(null)} />}
     </main>
   )

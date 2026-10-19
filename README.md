@@ -1,6 +1,8 @@
 # MyHours
 
-MyHours is a mobile-first personal timesheet prototype built with React, Vite, and CSS. Shift data and the active clock-in timestamp are stored in the browser's `localStorage`; there is no backend or authentication.
+MyHours is a mobile-first personal timesheet prototype built with React, Vite, and CSS. Shift data,  notes and the active clock-in timestamp are stored in the browser's `localStorage`; there is no backend or authentication.
+
+The app is vibe-coded with GitHub Copilot.
 
 ## Run locally
 
