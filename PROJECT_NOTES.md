@@ -31,6 +31,17 @@ The local branch is synchronized with `origin/main` when these notes are created
 - Recent shifts list limited to the five most recent entries; the complete history remains available to calculations and calendar views.
 - English date and month display using `en-GB` while retaining local timezone behavior.
 - Whole-minute break display and storage rounding.
+- Inline overlap validation errors that identify conflicts with saved or active shifts while keeping the form open for correction.
+- Calendar day notes stored locally, with add/edit/delete dialogs, note indicators, accessible keyboard interaction, and auto-dismissing confirmations.
+- “Click day to add note” guidance and responsive calendar navigation.
+- Teal clock-card theme, matching progress bars and branding, gradient background, responsive spacing, and readable calendar styling.
+- Maintainability refactor separating time calculations into `src/utils/time.js` and localStorage access into `src/utils/storage.js`.
+- Clarifying names and comments for break allocation, overnight shifts, and timeline clipping without changing application behavior.
+- Readable, consistently formatted CSS with unchanged visual tokens and behavior.
+- Automated Node tests covering break deduction, overnight shifts, edited weekly/monthly totals, and localStorage persistence.
+- Production GitHub Pages configuration using the `/MyHours/` Vite base path.
+- PWA manifest, local icons, service worker, and repository-aware asset paths.
+- GitHub Actions workflow that runs tests and builds before deploying `dist` to GitHub Pages.
 - Responsive mobile-first layout.
 - Accessibility labels, view-selector states, dialog semantics, validation announcements, invalid-field states, and live clock status messaging.
 - Local `.gitignore` excluding `node_modules`, `dist`, environment files, and `.DS_Store`.
@@ -41,39 +52,35 @@ None currently recorded for the MVP.
 
 ## Next steps
 
-Enable GitHub Pages in the repository settings and rerun the deployment workflow:
-
-1. Open **Settings → Pages** on the GitHub repository.
-2. Set the deployment source to **GitHub Actions**.
-3. Rerun the `Deploy to GitHub Pages` workflow from the Actions tab.
-
-The intended public URL is:
+The application is deployed and available at:
 
 ```text
 https://tuss82.github.io/MyHours/
 ```
 
-The deployment configuration was added in commit `e49da4a` (`Configure GitHub Pages deployment`).
-The build and test job passed on GitHub Actions, but the deployment job returned a 404 because
-GitHub Pages has not yet been enabled for the repository.
+The deployment configuration was added in commit `e49da4a` (`Configure GitHub Pages deployment`),
+and the GitHub Actions deployment completed successfully after GitHub Pages was enabled.
+
+No further MVP work is currently planned. Resume from the latest committed state when development continues.
 
 ## Development environment
 
-Node.js is managed with fnm. The tool-launched Windows PowerShell session does not automatically load the PowerShell profile, so initialize fnm in every PowerShell process that runs Node.js or npm:
+With Node.js available, open a terminal in the project directory.
+When using a tool-launched PowerShell session with fnm, initialize fnm in the
+same PowerShell process before running Node.js or npm commands:
 
 ```powershell
 fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
 ```
 
-Then run commands from the project directory:
+Then run:
 
 ```powershell
-Set-Location C:\Users\tuss8\Documents\DAVE3625\NewProject
 npm install
 npm run dev
 ```
 
-Do not modify the system PATH, PowerShell profile, or Node.js installation to work around this. For a production validation:
+For a production validation:
 
 ```powershell
 fnm env --use-on-cd --shell powershell | Out-String | Invoke-Expression
@@ -91,5 +98,5 @@ The project is configured for GitHub Pages under the `/MyHours/` repository path
 - Vite uses `base: '/MyHours/'`.
 - The PWA manifest, icons, and service worker are emitted with repository-aware paths.
 - `.github/workflows/deploy.yml` runs `npm ci`, `npm test`, `npm run build`, and deploys `dist`.
-- Local checks completed successfully today: `npm test` (4 tests passed) and `npm run build`.
-- GitHub Pages is configured in the repository files but still requires manual enabling as described above.
+- Local checks completed successfully: `npm test` (4 tests passed) and `npm run build`.
+- GitHub Pages is enabled and the deployment workflow is passing.
