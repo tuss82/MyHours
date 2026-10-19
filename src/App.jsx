@@ -164,6 +164,7 @@ function calendarWeekNumber(date) {
 function CalendarView({ view, shifts, now }) {
   const today = startOfDay(now)
   const [weekOffset, setWeekOffset] = useState(0)
+  const [monthOffset, setMonthOffset] = useState(0)
   if (view === 'day') {
     const segments = daySegments(shifts, today, now.getTime())
     const paid = dayPaidMinutes(shifts, today)
@@ -212,16 +213,25 @@ function CalendarView({ view, shifts, now }) {
     )
   }
 
-  const month = new Date(now.getFullYear(), now.getMonth(), 1)
+  const month = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1)
+  const isCurrentMonth = monthOffset === 0
   const monthLabel = new Intl.DateTimeFormat(DISPLAY_LOCALE, { month: 'long', year: 'numeric' }).format(month)
   return (
     <div className="calendar-panel">
-      <div className="calendar-panel-heading"><div><h3>{monthLabel}</h3></div><div className="week-total"><span>Total paid hours</span><strong>{formatDuration(daysInMonthTotal(shifts, month))}</strong></div></div>
+      <div className="calendar-panel-heading month-calendar-heading">
+        <div><h3>{monthLabel}</h3></div>
+        <div className="month-navigation">
+          <button onClick={() => setMonthOffset((offset) => offset - 1)} aria-label="Previous month">←</button>
+          {!isCurrentMonth && <button className="current-month-button" onClick={() => setMonthOffset(0)}>Current month</button>}
+          <button onClick={() => setMonthOffset((offset) => offset + 1)} aria-label="Next month">→</button>
+        </div>
+        <div className="week-total"><span>Total paid hours</span><strong>{formatDuration(daysInMonthTotal(shifts, month))}</strong></div>
+      </div>
       <div className="month-weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
       <div className="month-grid">{monthDays(month).map((day, index) => {
         if (!day) return <span className="month-day blank" key={`blank-${index}`} />
         const paid = dayPaidMinutes(shifts, day)
-        const isToday = day.getTime() === today.getTime()
+        const isToday = isCurrentMonth && day.getTime() === today.getTime()
         return <span className={`month-day${paid ? ' worked' : ''}${isToday ? ' today' : ''}`} key={day.toISOString()}><b>{day.getDate()}</b>{paid ? <small>{(paid / 60).toFixed(1)} hrs</small> : null}</span>
       })}</div>
       <p className="calendar-hint"><span className="orange-key" /> Shift registered</p>
@@ -398,7 +408,7 @@ export default function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-mark" aria-hidden="true">M</div>
+        <div className="brand-mark" aria-hidden="true"><span>M</span></div>
         <div><p className="eyebrow">Personal timesheet</p><h1>MyHours</h1></div>
         <span className="privacy-pill">On this device</span>
       </header>
