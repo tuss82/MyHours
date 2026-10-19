@@ -41,7 +41,21 @@ None currently recorded for the MVP.
 
 ## Next steps
 
-None currently planned. Resume from the latest committed state when development continues.
+Enable GitHub Pages in the repository settings and rerun the deployment workflow:
+
+1. Open **Settings → Pages** on the GitHub repository.
+2. Set the deployment source to **GitHub Actions**.
+3. Rerun the `Deploy to GitHub Pages` workflow from the Actions tab.
+
+The intended public URL is:
+
+```text
+https://tuss82.github.io/MyHours/
+```
+
+The deployment configuration was added in commit `e49da4a` (`Configure GitHub Pages deployment`).
+The build and test job passed on GitHub Actions, but the deployment job returned a 404 because
+GitHub Pages has not yet been enabled for the repository.
 
 ## Development environment
 
@@ -72,4 +86,10 @@ The Git remote is:
 https://github.com/tuss82/MyHours.git
 ```
 
-GitHub Pages is not configured or enabled.
+The project is configured for GitHub Pages under the `/MyHours/` repository path:
+
+- Vite uses `base: '/MyHours/'`.
+- The PWA manifest, icons, and service worker are emitted with repository-aware paths.
+- `.github/workflows/deploy.yml` runs `npm ci`, `npm test`, `npm run build`, and deploys `dist`.
+- Local checks completed successfully today: `npm test` (4 tests passed) and `npm run build`.
+- GitHub Pages is configured in the repository files but still requires manual enabling as described above.
